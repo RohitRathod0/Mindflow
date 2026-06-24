@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { registerPush } from '../utils/pushNotifications';
 
 const CATEGORY_STYLES = {
   study:    { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/40', dot: 'bg-blue-400', label: 'Study' },
@@ -37,6 +38,10 @@ export default function Dashboard() {
   const [xp, setXp] = useState(0);
   const [level, setLevel] = useState(1);
   const [error, setError] = useState('');
+  const [freeSlots, setFreeSlots] = useState([]);
+  const [calendarConnected, setCalendarConnected] = useState(
+    !!localStorage.getItem('calendar_connected')
+  );
 
   const userId = localStorage.getItem('user_id');
   const userProfile = JSON.parse(localStorage.getItem('user_profile') || '{}');
@@ -49,6 +54,15 @@ export default function Dashboard() {
     setLevel(profile?.level ?? 1);
   }, []);
 
+  // Register push notifications once
+  useEffect(() => {
+    if (!localStorage.getItem('push_registered') && userId) {
+      registerPush(userId)
+        .then(() => localStorage.setItem('push_registered', 'true'))
+        .catch((err) => console.warn('Push registration failed:', err.message));
+    }
+  }, [userId]);
+
   const fetchAndScore = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -56,6 +70,18 @@ export default function Dashboard() {
       const { data } = await axios.get('/api/tasks/today', { params: { user_id: userId } });
       let taskList = data.tasks || [];
       setTasks(taskList);
+
+      // Handle free slots
+      if (data.free_slots && Array.isArray(data.free_slots)) {
+        setFreeSlots(data.free_slots);
+      }
+
+      // Handle calendar reconnect required
+      if (data.reconnect_required) {
+        localStorage.removeItem('calendar_connected');
+        setCalendarConnected(false);
+      }
+
       setLoading(false);
 
       if (taskList.length > 0) {
@@ -73,13 +99,11 @@ export default function Dashboard() {
             return match ? { ...t, ai_priority_score: match.ai_priority_score } : t;
           });
           merged.sort((a, b) => {
-            // First sort by scheduled_time, nulls last
             if (a.scheduled_time && b.scheduled_time) {
               return new Date(a.scheduled_time) - new Date(b.scheduled_time);
             }
             if (a.scheduled_time) return -1;
             if (b.scheduled_time) return 1;
-            // Then by priority score
             return (b.ai_priority_score ?? -1) - (a.ai_priority_score ?? -1);
           });
           setTasks(merged);
@@ -99,16 +123,37 @@ export default function Dashboard() {
     fetchAndScore();
   }, [fetchAndScore]);
 
+  const handleCalendarConnect = async () => {
+    try {
+      const { data } = await axios.get('/api/auth/google-calendar', {
+        params: { user_id: userId },
+      });
+      if (data.oauth_url) {
+        window.open(data.oauth_url, '_blank');
+        // After 3 seconds, assume connection is being processed
+        setTimeout(() => {
+          localStorage.setItem('calendar_connected', 'true');
+          setCalendarConnected(true);
+          fetchAndScore();
+        }, 3000);
+      }
+    } catch (err) {
+      console.error('Calendar connect error:', err.message);
+    }
+  };
+
   const handleComplete = async (taskId, xpValue) => {
     try {
       const { data } = await axios.patch(`/api/tasks/${taskId}/complete`, {
         completed_at: new Date().toISOString(),
+        user_id: userId,
       });
       const earned = data.xp_earned || xpValue || 10;
 
       // Update XP in localStorage
       const profile = JSON.parse(localStorage.getItem('user_profile') || '{}');
-      profile.xp = (profile.xp || 0) + earned;
+      profile.xp = (data.new_xp !== null && data.new_xp !== undefined) ? data.new_xp : ((profile.xp || 0) + earned);
+      if (data.new_level) profile.level = data.new_level;
       if (profile.xp >= 100) {
         profile.xp = profile.xp % 100;
         profile.level = (profile.level || 1) + 1;
@@ -123,8 +168,26 @@ export default function Dashboard() {
     }
   };
 
+  const handleTestNotification = async () => {
+    try {
+      await axios.post('/api/notifications/send', {
+        user_id: userId,
+        title: 'FlowMind Test',
+        body: 'Push notifications are working! 🎉',
+        action_buttons: [],
+      });
+    } catch (err) {
+      console.error('Test notification failed:', err.message);
+    }
+  };
+
   const goToTasks = () => {
     localStorage.setItem('page', 'tasks');
+    window.location.reload();
+  };
+
+  const goToStats = () => {
+    localStorage.setItem('page', 'stats');
     window.location.reload();
   };
 
@@ -203,6 +266,23 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* Calendar Connect Banner — show only if not connected */}
+        {!calendarConnected && (
+          <div className="p-3 rounded-xl bg-[#1e1e38] border border-[rgba(90,117,244,0.2)] flex items-center justify-between">
+            <div>
+              <p className="text-sm text-slate-300 font-medium">📅 Connect Google Calendar</p>
+              <p className="text-xs text-slate-500">Let FlowMind read your schedule and find free slots</p>
+            </div>
+            <button
+              onClick={handleCalendarConnect}
+              id="calendar-connect-btn"
+              className="px-3 py-1.5 rounded-lg bg-[#5a75f4] text-white text-xs font-semibold hover:bg-[#4a65e4] transition-all"
+            >
+              Connect
+            </button>
+          </div>
+        )}
+
         {/* Stats row */}
         {!loading && (
           <div className="grid grid-cols-3 gap-3">
@@ -217,6 +297,23 @@ export default function Dashboard() {
                 <div className="text-xs text-slate-500">{stat.label}</div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Free Slots Section */}
+        {freeSlots.length > 0 && (
+          <div>
+            <h2 className="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">Free Slots Today</h2>
+            <div className="flex gap-2 flex-wrap">
+              {freeSlots.map((slot, i) => (
+                <span
+                  key={i}
+                  className="px-3 py-1.5 rounded-xl bg-[#1e1e38] border border-[rgba(90,117,244,0.2)] text-xs text-slate-300"
+                >
+                  {slot.start} – {slot.end} <span className="text-slate-500">({slot.duration_mins}m)</span>
+                </span>
+              ))}
+            </div>
           </div>
         )}
 
@@ -273,6 +370,11 @@ export default function Dashboard() {
                                 {priority.label}
                               </span>
                             )}
+                            {task.calendar_event_id && (
+                              <span className="px-2 py-0.5 rounded-full text-xs border bg-blue-500/10 text-blue-400 border-blue-500/30">
+                                📅 Cal
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-3 flex-wrap">
                             {task.duration_mins && (
@@ -313,14 +415,30 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Add Task FAB */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3">
+      {/* Add Task FAB + Stats link + Test Notification */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2">
         <button
           onClick={goToTasks}
           className="px-6 py-3 rounded-2xl bg-gradient-to-r from-[#5a75f4] to-[#7a5af8] text-white font-semibold shadow-[0_8px_25px_rgba(90,117,244,0.5)] hover:shadow-[0_8px_35px_rgba(90,117,244,0.7)] hover:scale-105 transition-all flex items-center gap-2"
         >
           <span className="text-lg">+</span> Add Task
         </button>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={goToStats}
+            id="view-stats-btn"
+            className="text-xs text-slate-500 hover:text-slate-300 underline transition-colors"
+          >
+            View Stats &amp; Streaks
+          </button>
+          <button
+            onClick={handleTestNotification}
+            id="test-notification-btn"
+            className="text-xs text-slate-500 hover:text-slate-300 underline transition-colors"
+          >
+            Test Notification
+          </button>
+        </div>
       </div>
 
       {/* Floating mic button — disabled, Day 4 */}

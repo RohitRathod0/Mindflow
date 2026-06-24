@@ -19,6 +19,10 @@ app.get('/health', (req, res) => {
 app.use('/api/user', require('./routes/user.routes'));
 app.use('/api/tasks', require('./routes/tasks.routes'));
 app.use('/api/agent', require('./routes/agent.routes'));
+app.use('/api/auth', require('./routes/auth.routes'));
+app.use('/api/calendar', require('./routes/calendar.routes'));
+app.use('/api/notifications', require('./routes/notifications.routes'));
+app.use('/api/habits', require('./routes/habits.routes'));
 
 // MongoDB connection
 mongoose

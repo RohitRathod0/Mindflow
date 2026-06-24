@@ -42,15 +42,16 @@ const userSchema = new mongoose.Schema({
       type: String,
       default: 'en',
     },
-    google_calendar_token: {
-      access_token:  { type: String, default: null },
-      refresh_token: { type: String, default: null },
-      expiry:        { type: String, default: null },
-    },
   },
-  xp:         { type: Number, default: 0 },
-  level:      { type: Number, default: 1 },
-  created_at: { type: Date, default: Date.now },
+  google_calendar_token: {
+    access_token:  { type: String, default: null },
+    refresh_token: { type: String, default: null },
+    expiry:        { type: String, default: null },
+  },
+  xp:                { type: Number, default: 0 },
+  level:             { type: Number, default: 1 },
+  push_subscription: { type: Object, default: null },
+  created_at:        { type: Date, default: Date.now },
 });
 
 module.exports = mongoose.model('User', userSchema);

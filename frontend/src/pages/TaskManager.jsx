@@ -44,6 +44,7 @@ export default function TaskManager() {
   const [form, setForm] = useState(INITIAL_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [calendarToast, setCalendarToast] = useState(false);
 
   const userId = localStorage.getItem('user_id');
   const userProfile = JSON.parse(localStorage.getItem('user_profile') || '{}');
@@ -97,7 +98,7 @@ export default function TaskManager() {
     setSubmitting(true);
     setError('');
     try {
-      await axios.post('/api/tasks', {
+      const { data } = await axios.post('/api/tasks', {
         user_id: userId,
         title: form.title,
         category: form.category,
@@ -107,6 +108,11 @@ export default function TaskManager() {
         is_recurring: form.is_recurring,
       });
       setForm(INITIAL_FORM);
+      // Show calendar toast if event was created
+      if (data.task?.calendar_event_id) {
+        setCalendarToast(true);
+        setTimeout(() => setCalendarToast(false), 2000);
+      }
       await fetchAndScore();
     } catch (err) {
       setError('Failed to add task: ' + (err.response?.data?.error || err.message));
@@ -142,6 +148,13 @@ export default function TaskManager() {
     <div className="min-h-screen bg-[#0f0f1a] pb-20">
       {/* Fixed background glow */}
       <div className="fixed top-0 right-0 w-[400px] h-[400px] bg-[radial-gradient(ellipse,rgba(90,117,244,0.08)_0%,transparent_70%)] pointer-events-none" />
+
+      {/* Calendar Toast */}
+      {calendarToast && (
+        <div className="fixed top-4 right-4 z-50 px-4 py-2 rounded-xl bg-green-900/80 border border-green-500/40 text-green-300 text-sm animate-fade-in">
+          📅 Added to Google Calendar
+        </div>
+      )}
 
       {/* Header */}
       <div className="sticky top-0 z-10 bg-[#0f0f1a]/90 backdrop-blur-md border-b border-[rgba(90,117,244,0.1)]">
