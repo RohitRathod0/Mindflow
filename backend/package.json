@@ -1,0 +1,21 @@
+{
+  "name": "flowmind-backend",
+  "version": "1.0.0",
+  "description": "FlowMind AI — Express backend",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "mongoose": "^8.3.4",
+    "dotenv": "^16.4.5",
+    "cors": "^2.8.5",
+    "@google/generative-ai": "^0.15.0",
+    "firebase-admin": "^12.1.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

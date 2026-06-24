@@ -1,0 +1,8 @@
+# Root gitignore
+node_modules/
+.env
+.env.local
+*.log
+dist/
+firebase-service-account.json
+.DS_Store
