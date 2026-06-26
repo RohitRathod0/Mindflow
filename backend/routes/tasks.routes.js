@@ -269,28 +269,111 @@ router.patch('/:id/complete', async (req, res) => {
 });
 
 // PATCH /api/tasks/:id/skip
-// Body: { reason }
+// Body: { reason: 'emergency'|'choice'|'forgot', user_id }
+// Full streak logic per Day 3 spec
 router.patch('/:id/skip', async (req, res) => {
   try {
     const { id } = req.params;
-    const { reason } = req.body;
+    const { reason, user_id } = req.body;
 
-    const task = await Task.findByIdAndUpdate(
-      id,
-      {
-        status: 'skipped',
-        skip_reason: reason || null,
-      },
-      { new: true }
-    );
+    // 1. Find and update task status
+    const task = await Task.findById(id);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
 
-    if (!task) {
-      return res.status(404).json({ error: 'Task not found' });
+    task.status = 'skipped';
+    task.skip_reason = reason || null;
+    await task.save();
+
+    const taskUserId = user_id || task.user_id;
+
+    // 2. Fetch or create Habit doc for this category
+    let habit = await Habit.findOne({ user_id: taskUserId, task_category: task.category });
+    if (!habit) {
+      habit = new Habit({ user_id: taskUserId, task_category: task.category });
     }
 
-    res.json({ reschedule_suggestion: null });
+    let streak_impact = 'maintained';
+
+    // 3. Apply streak rules
+    if (reason === 'emergency') {
+      streak_impact = 'emergency_exception';
+      // Do NOT decrement current_streak
+      habit.emergency_skips_used = (habit.emergency_skips_used || 0) + 1;
+    } else if (reason === 'choice') {
+      // Streak maintained — reschedule will be offered; no change now
+      streak_impact = 'maintained';
+    } else if (reason === 'forgot') {
+      // Count how many 'forgot' skips for this category today
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const todayEnd = new Date();
+      todayEnd.setHours(23, 59, 59, 999);
+
+      const forgotCountToday = await Task.countDocuments({
+        user_id: taskUserId,
+        category: task.category,
+        status: 'skipped',
+        skip_reason: 'forgot',
+        created_at: { $gte: todayStart, $lte: todayEnd },
+      });
+
+      if (forgotCountToday >= 2) {
+        // 2nd consecutive forgot → break streak
+        habit.current_streak = Math.max(0, (habit.current_streak || 0) - 1);
+        streak_impact = 'broken';
+      } else {
+        streak_impact = 'maintained';
+      }
+    }
+
+    // 4. Check 3-consecutive-miss rule (last 3 days)
+    const threeDaysAgo = new Date();
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    threeDaysAgo.setHours(0, 0, 0, 0);
+
+    const consecutiveMissCount = await Task.countDocuments({
+      user_id: taskUserId,
+      category: task.category,
+      status: { $in: ['skipped', 'missed'] },
+      created_at: { $gte: threeDaysAgo },
+    });
+
+    const remove_goal_prompt = consecutiveMissCount >= 3;
+
+    // 5. Save updated habit
+    await habit.save();
+
+    // 6. Return result
+    res.json({
+      streak_impact,
+      current_streak: habit.current_streak,
+      remove_goal_prompt,
+      reschedule_suggestion: null,
+    });
   } catch (err) {
     console.error('Skip task error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/tasks/:id/reschedule
+// Body: { scheduled_time, user_id }
+// Saves new scheduled_time and sets status to rescheduled
+router.patch('/:id/reschedule', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { scheduled_time } = req.body;
+
+    const task = await Task.findById(id);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+
+    task.scheduled_time = scheduled_time;
+    task.status = 'rescheduled';
+    await task.save();
+
+    res.json({ task });
+  } catch (err) {
+    console.error('Reschedule task error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

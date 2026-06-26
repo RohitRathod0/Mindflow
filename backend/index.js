@@ -25,10 +25,14 @@ app.use('/api/notifications', require('./routes/notifications.routes'));
 app.use('/api/habits', require('./routes/habits.routes'));
 
 // MongoDB connection
+const { initScheduler } = require('./services/scheduler.service');
+
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => {
     console.log('MongoDB connected');
+    initScheduler();
+    console.log('Scheduler initialized');
     app.listen(PORT, () => {
       console.log(`FlowMind AI backend running on port ${PORT}`);
     });
