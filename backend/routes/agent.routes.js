@@ -7,6 +7,8 @@ const { buildPrioritizePrompt } = require('../prompts/prioritize.prompt');
 const { buildReschedulePrompt } = require('../prompts/reschedule.prompt');
 const { buildOverloadPrompt } = require('../prompts/overload.prompt');
 const { getCalendarEvents, calculateFreeSlots } = require('../services/calendar.service');
+const Conversation = require('../models/Conversation.model');
+const { buildChatPrompt } = require('../prompts/chat.prompt');
 
 // POST /api/agent/prioritize
 // Body: { tasks[], user_profile }
@@ -157,6 +159,174 @@ router.post('/overload-check', async (req, res) => {
     res.json({ overloaded: true, must_do, can_defer, damage_control_msg, sprint_mode });
   } catch (err) {
     console.error('Overload check error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/agent/chat
+router.post('/chat', async (req, res) => {
+  try {
+    const { message, conversation_history = [], voice_mode, user_id } = req.body;
+    if (!user_id || !message) {
+      return res.status(400).json({ error: 'user_id and message are required' });
+    }
+
+    const user = await User.findById(user_id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const todaySchedule = await Task.find({ user_id, status: 'pending' });
+
+    const userProfile = {
+      name: user.name,
+      persona: user.persona || 'student',
+      profile: user.profile || {},
+    };
+
+    const prompt = buildChatPrompt(message, userProfile, todaySchedule, conversation_history);
+    const result = await callGemini(prompt, true); // jsonMode true
+
+    let actions_executed = [];
+
+    if (result.intent === 'SKIP_TASK' && result.task_affected) {
+      // Find the task by title match (case-insensitive)
+      const taskToSkip = await Task.findOne({
+        user_id: user._id,
+        title: { $regex: result.task_affected, $options: 'i' },
+        status: 'pending'
+      });
+      if (taskToSkip) {
+        taskToSkip.status = 'skipped';
+        taskToSkip.skip_reason = result.intent === 'EMERGENCY' ? 'emergency' : 'choice';
+        await taskToSkip.save();
+        actions_executed.push(`Skipped task: ${taskToSkip.title}`);
+        // Set flag for frontend to call /api/agent/reschedule
+        result.calendar_update_needed = true;
+      }
+    }
+
+    if (result.intent === 'COMPLETE_TASK' && result.task_affected) {
+      const taskToComplete = await Task.findOne({
+        user_id: user._id,
+        title: { $regex: result.task_affected, $options: 'i' },
+        status: 'pending'
+      });
+      if (taskToComplete) {
+        taskToComplete.status = 'completed';
+        taskToComplete.completed_at = new Date();
+        await taskToComplete.save();
+        // XP update — same logic as PATCH /tasks/:id/complete
+        await User.findByIdAndUpdate(user._id, { $inc: { xp: taskToComplete.xp_value } });
+        actions_executed.push(`Completed task: ${taskToComplete.title} (+${taskToComplete.xp_value} XP)`);
+      }
+    }
+
+    if (result.intent === 'ADD_TASK' && result.task_affected) {
+      // Gemini should have included task details in action_taken
+      // Parse a basic task from action_taken string — create with defaults
+      const newTask = new Task({
+        user_id: user._id,
+        title: result.task_affected,
+        category: 'personal',
+        status: 'pending',
+        xp_value: 10
+      });
+      await newTask.save();
+      actions_executed.push(`Added task: ${newTask.title}`);
+    }
+
+    if (result.intent === 'QUERY_SCHEDULE') {
+      // No DB change — Gemini already responded with schedule in reply
+      actions_executed.push('Schedule query answered');
+    }
+
+    // Override action_taken with what was actually executed
+    result.action_taken = actions_executed.join(', ') || result.action_taken;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const session_id = `${user_id}_${todayStr}`;
+    
+    let conversation = await Conversation.findOne({ user_id, session_id });
+    if (!conversation) {
+      conversation = new Conversation({ user_id, session_id, messages: [] });
+    }
+
+    conversation.messages.push({ role: 'user', text: message, intent: null });
+    conversation.messages.push({
+      role: 'agent',
+      text: result.reply,
+      intent: result.intent,
+      actions_taken: result.action_taken && result.action_taken !== 'null' ? [result.action_taken] : []
+    });
+
+    await conversation.save();
+
+    res.json({
+      reply: result.reply,
+      intent: result.intent,
+      task_affected: result.task_affected,
+      action_taken: result.action_taken,
+      calendar_update_needed: result.calendar_update_needed,
+      tts_text: result.tts_text
+    });
+  } catch (err) {
+    console.error('Chat error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/agent/conversation
+// Query: user_id, date (YYYY-MM-DD)
+router.get('/conversation', async (req, res) => {
+  try {
+    const { user_id, date } = req.query;
+    if (!user_id || !date) {
+      return res.status(400).json({ error: 'user_id and date are required' });
+    }
+
+    const session_id = `${user_id}_${date}`;
+    const conversation = await Conversation.findOne({ user_id, session_id });
+    
+    if (!conversation) {
+      return res.json({ messages: [] });
+    }
+
+    res.json({ messages: conversation.messages });
+  } catch (err) {
+    console.error('Conversation fetch error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/agent/fast-help
+router.post('/fast-help', async (req, res) => {
+  try {
+    const { persona, context, deadline_hours_left, user_id } = req.body;
+    
+    if (!user_id || !context) {
+      return res.status(400).json({ error: 'user_id and context are required' });
+    }
+
+    let prompt;
+    if (persona === 'student') {
+      prompt = `You are a helpful academic tutor. The student needs help with: "${context}". Deadline in ${deadline_hours_left} hours. Give a clear, structured explanation or study plan. Max 150 words. Plain text, no markdown headers.`;
+    } else if (persona === 'gym' || persona === 'fitness') {
+      prompt = `You are an energetic fitness coach. Generate a motivational workout cue list for: "${context}". Include 4-5 specific actionable cues. Keep it punchy and energetic. Max 100 words. Plain text.`;
+    } else if (persona === 'professional') {
+      prompt = `You are a professional writing assistant. Draft a concise email or task breakdown for: "${context}". Professional tone, max 120 words. Plain text, no markdown.`;
+    } else {
+      prompt = `You are FlowMind AI. Help the user with: "${context}". Max 150 words. Plain text.`;
+    }
+
+    // Call Gemini in text mode (jsonMode false)
+    const helpText = await callGemini(prompt, false);
+
+    // Determine type
+    const typeMap = { student: 'qa', gym: 'workout', fitness: 'workout', professional: 'email' };
+    const type = typeMap[persona] || 'qa';
+
+    return res.json({ help_content: helpText, type });
+  } catch (err) {
+    console.error('Fast help error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

@@ -659,29 +659,21 @@ export default function Dashboard() {
         >
           View Stats &amp; Streaks
         </button>
+        <button
+          onClick={() => { localStorage.setItem('page','fast-help'); window.location.reload(); }}
+          className="text-xs text-slate-500 hover:text-slate-300 underline transition-colors"
+        >
+          {userProfile?.persona === 'student' ? '📚 Quick Study Help' : userProfile?.persona === 'gym' || userProfile?.persona === 'fitness' ? '💪 Workout Cues' : '📧 Quick Email Draft'}
+        </button>
       </div>
 
-      {/* Floating mic button — disabled, Day 4 */}
-      <div className="fixed bottom-6 right-6 group">
-        <div className="relative">
-          <button
-            disabled
-            className="w-14 h-14 rounded-full bg-[#1e1e38] border-2 border-[rgba(90,117,244,0.2)] text-slate-600 cursor-not-allowed flex items-center justify-center shadow-lg"
-            title="Voice Agent — Day 4"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-            </svg>
-          </button>
-          {/* Tooltip */}
-          <div className="absolute bottom-16 right-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-            <div className="bg-[#1e1e38] border border-[rgba(90,117,244,0.2)] text-slate-400 text-xs px-3 py-1.5 rounded-xl whitespace-nowrap shadow-lg">
-              🎙️ Voice Agent — Day 4
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Floating mic button */}
+      <button
+        onClick={() => { localStorage.setItem('page','voice'); window.location.reload(); }}
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-[#5a75f4] shadow-lg flex items-center justify-center text-2xl hover:bg-[#4a65e4] transition-all z-40"
+      >
+        🎙️
+      </button>
 
       {/* Day 3: Reschedule Suggestion Card — bottom sheet overlay */}
       {rescheduleModal && (
