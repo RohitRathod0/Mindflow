@@ -81,7 +81,20 @@ router.patch('/respond', async (req, res) => {
       return res.json({ task_updated: true });
     }
 
-    // snooze / skip: Day 3 will handle
+    if (action === 'skip' && task_id) {
+      const Task = require('../models/Task.model');
+      await Task.findByIdAndUpdate(task_id, { status: 'skipped', skip_reason: 'choice' });
+      return res.json({ task_updated: true, action: 'skipped' });
+    }
+
+    if (action === 'snooze' && task_id) {
+      const Task = require('../models/Task.model');
+      // Snooze = set scheduled_time to 30 mins from now
+      const snoozedTo = new Date(Date.now() + 30 * 60 * 1000);
+      await Task.findByIdAndUpdate(task_id, { scheduled_time: snoozedTo });
+      return res.json({ task_updated: true, action: 'snoozed', snoozed_to: snoozedTo });
+    }
+
     res.json({ task_updated: false });
   } catch (err) {
     console.error('Notification respond error:', err.message);

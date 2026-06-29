@@ -1,0 +1,13 @@
+{
+  "name": "FlowMind AI",
+  "short_name": "FlowMind",
+  "description": "Your AI-powered productivity agent",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f0f1a",
+  "theme_color": "#5a75f4",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/favicon.ico", "sizes": "64x64", "type": "image/x-icon" }
+  ]
+}

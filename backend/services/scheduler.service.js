@@ -3,6 +3,17 @@ const User = require('../models/User.model');
 const Task = require('../models/Task.model');
 const { callGemini } = require('./gemini.service');
 const { sendNotification } = require('./notification.service');
+const DailyDebrief = require('../models/DailyDebrief.model');
+const webpush = require('web-push');
+
+// Configure webpush VAPID for direct use in crons (also configured in notification.service.js)
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    process.env.VAPID_EMAIL || 'mailto:test@flowmind.ai',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+}
 
 /**
  * initScheduler()
@@ -84,6 +95,68 @@ function initScheduler() {
   });
 
   console.log('[Scheduler] All 3 cron jobs registered (7AM morning, 9PM evening, hourly deadline)');
+
+  // --- CRON 4: Debrief Generation — every day at 10:00 PM ---
+  cron.schedule('0 22 * * *', async () => {
+    console.log('[Scheduler] Debrief cron fired');
+    const users = await User.find({ push_subscription: { $ne: null } });
+    const today = new Date().toISOString().split('T')[0];
+    for (const user of users) {
+      try {
+        const dayStart = new Date(today + 'T00:00:00.000Z');
+        const dayEnd = new Date(today + 'T23:59:59.999Z');
+        const completed = await Task.find({ user_id: user._id, status: 'completed', completed_at: { $gte: dayStart, $lte: dayEnd } });
+        const missed = await Task.find({ user_id: user._id, status: { $in: ['skipped', 'pending'] }, deadline: { $gte: dayStart, $lte: dayEnd } });
+        const xpEarned = completed.reduce((sum, t) => sum + (t.xp_value || 0), 0);
+        const { buildDebriefPrompt } = require('../prompts/debrief.prompt');
+        const userProfile = { name: user.name, persona: user.persona || 'student', profile: user.profile || {} };
+        const prompt = buildDebriefPrompt(completed, missed, userProfile, xpEarned);
+        const result = await callGemini(prompt, true);
+        await DailyDebrief.findOneAndUpdate(
+          { user_id: user._id, date: dayStart },
+          {
+            completed_tasks: completed.map(t => t._id),
+            missed_tasks: missed.map(t => t._id),
+            xp_earned: xpEarned,
+            gemini_tip: result.gemini_tip || '',
+            productivity_score: result.productivity_score || 0
+          },
+          { upsert: true }
+        );
+        await sendNotification(user.push_subscription, '📊 Daily Debrief Ready', result.motivational_line || 'Your debrief is ready!');
+      } catch (e) {
+        console.error('Debrief cron error for user', user._id, e.message);
+      }
+    }
+  });
+
+  // --- CRON 5: Night Check-in — every day at 9:30 PM ---
+  cron.schedule('30 21 * * *', async () => {
+    console.log('[Scheduler] Night check-in cron fired');
+    const users = await User.find({ push_subscription: { $ne: null } });
+    for (const user of users) {
+      const pending = await Task.find({ user_id: user._id, status: 'pending' }).sort({ ai_priority_score: -1 }).limit(1);
+      if (!pending.length) continue;
+      const topTask = pending[0];
+      // Send notification with action buttons payload
+      const payload = JSON.stringify({
+        title: '⏰ Night Check-in',
+        body: `Still pending: ${topTask.title}. Quick action?`,
+        data: {
+          task_id: topTask._id.toString(),
+          user_id: user._id.toString(),
+          actions: ['done', 'skip']
+        }
+      });
+      try {
+        await webpush.sendNotification(user.push_subscription, payload);
+      } catch (e) {
+        console.error('Night check-in push error:', e.message);
+      }
+    }
+  });
+
+  console.log('[Scheduler] All 5 cron jobs registered (7AM morning, 9PM evening, hourly deadline, 10PM debrief, 9:30PM night check-in)');
 }
 
 module.exports = { initScheduler };

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { api as axios } from '../utils/api';
 
 export default function Stats() {
   const [habits, setHabits] = useState([]);
@@ -31,7 +31,7 @@ export default function Stats() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0f0f1a] pb-20">
+    <div className="min-h-screen bg-[#0f0f1a] pb-20 overflow-x-hidden">
       {/* Background glows */}
       <div className="fixed top-0 left-0 w-[500px] h-[300px] bg-[radial-gradient(ellipse,rgba(90,117,244,0.10)_0%,transparent_70%)] pointer-events-none" />
       <div className="fixed bottom-0 right-0 w-[400px] h-[400px] bg-[radial-gradient(ellipse,rgba(122,90,248,0.07)_0%,transparent_70%)] pointer-events-none" />

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import axios from 'axios';
+import { api as axios } from '../utils/api';
 
 const STEPS = [
   {

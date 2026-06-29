@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import { api as axios } from '../utils/api';
+import SkeletonCard from '../components/SkeletonCard';
 
 const CATEGORY_STYLES = {
   study:    { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/40', dot: 'bg-blue-400', label: 'Study' },
@@ -198,7 +199,7 @@ export default function TaskManager() {
               className="w-full px-4 py-3 rounded-xl bg-[#12122a] border border-[rgba(90,117,244,0.25)] text-white placeholder-slate-500 focus:outline-none focus:border-[#5a75f4] transition-all text-sm"
             />
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-slate-500 block mb-1">Category</label>
                 <select
@@ -288,7 +289,7 @@ export default function TaskManager() {
           {loadingTasks ? (
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-24 rounded-2xl bg-[#1e1e38] animate-pulse" />
+                <SkeletonCard key={i} />
               ))}
             </div>
           ) : tasks.length === 0 ? (

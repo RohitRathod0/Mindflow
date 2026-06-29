@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { api as axios } from '../utils/api';
 
 export default function VoiceAgent() {
   const [messages, setMessages] = useState([]); // { role: 'user'|'agent', text: string }[]
@@ -96,7 +96,7 @@ export default function VoiceAgent() {
   ];
 
   const HINT_BY_LANG = {
-    'en-IN': 'Try: "Skip gym today" or "What\\'s pending?"',
+    'en-IN': 'Try: "Skip gym today" or "What\'s pending?"',
     'hi-IN': 'Try: "Gym skip karna hai" or "Aaj kya pending hai?"',
     'ta-IN': 'Try: "Gym skip seyyanum" or "Today schedule?"',
     'te-IN': 'Try: "Gym skip cheyyali" or "Today tasks?"'
@@ -151,8 +151,10 @@ export default function VoiceAgent() {
         })}
         {isThinking && (
           <div className="flex justify-start">
-            <div className="bg-[#1e1e38] px-4 py-2.5 rounded-2xl rounded-bl-sm border border-[rgba(90,117,244,0.15)]">
-              <span className="text-slate-400 text-sm">Thinking...</span>
+            <div className="bg-[#1e1e38] px-4 py-3 rounded-2xl rounded-bl-sm border border-[rgba(90,117,244,0.15)] flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-[#5a75f4] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-1.5 h-1.5 bg-[#5a75f4] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-1.5 h-1.5 bg-[#5a75f4] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
             </div>
           </div>
         )}

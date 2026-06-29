@@ -4,6 +4,7 @@ import TaskManager from './pages/TaskManager';
 import Stats from './pages/Stats';
 import VoiceAgent from './pages/VoiceAgent';
 import FastHelp from './pages/FastHelp';
+import Debrief from './pages/Debrief';
 
 const App = () => {
   const page =
@@ -16,6 +17,7 @@ const App = () => {
   if (page === 'stats') return <Stats />;
   if (page === 'voice') return <VoiceAgent />;
   if (page === 'fast-help') return <FastHelp />;
+  if (page === 'debrief') return <Debrief />;
   return <Onboarding />;
 };
 

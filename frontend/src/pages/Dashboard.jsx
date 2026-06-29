@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import { api as axios } from '../utils/api';
 import { registerPush } from '../utils/pushNotifications';
+import SkeletonCard from '../components/SkeletonCard';
 
 const CATEGORY_STYLES = {
   study:    { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/40', dot: 'bg-blue-400', label: 'Study' },
@@ -517,7 +518,7 @@ export default function Dashboard() {
           {loading ? (
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-20 rounded-2xl bg-[#1e1e38] animate-pulse" />
+                <SkeletonCard key={i} />
               ))}
             </div>
           ) : tasks.length === 0 ? (
@@ -536,16 +537,11 @@ export default function Dashboard() {
                 const isPending = task.status === 'pending';
 
                 return (
-                  <div key={taskId} className="flex gap-3">
+                  <div key={taskId} className="flex flex-col sm:flex-row gap-2 sm:gap-3 sm:items-start">
                     {/* Time column */}
-                    <div className="w-14 flex-shrink-0 flex flex-col items-center pt-4">
-                      <span className="text-xs text-slate-500 font-mono text-center leading-tight">
-                        {timeLabel || '—'}
-                      </span>
-                      {idx < tasks.length - 1 && (
-                        <div className="w-px flex-1 bg-[rgba(90,117,244,0.15)] mt-2" />
-                      )}
-                    </div>
+                    <span className="text-xs text-slate-600 sm:w-16 sm:text-right sm:pt-1">
+                      {timeLabel || '—'}
+                    </span>
 
                     {/* Task card */}
                     <div className="flex-1 glass rounded-2xl p-4 hover:border-[rgba(90,117,244,0.3)] transition-all">
@@ -664,6 +660,12 @@ export default function Dashboard() {
           className="text-xs text-slate-500 hover:text-slate-300 underline transition-colors"
         >
           {userProfile?.persona === 'student' ? '📚 Quick Study Help' : userProfile?.persona === 'gym' || userProfile?.persona === 'fitness' ? '💪 Workout Cues' : '📧 Quick Email Draft'}
+        </button>
+        <button
+          onClick={() => { localStorage.setItem('page', 'debrief'); window.location.reload(); }}
+          className="text-xs text-slate-500 hover:text-slate-300 underline transition-colors"
+        >
+          📊 Today's Debrief
         </button>
       </div>
 

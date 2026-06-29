@@ -9,6 +9,8 @@ const { buildOverloadPrompt } = require('../prompts/overload.prompt');
 const { getCalendarEvents, calculateFreeSlots } = require('../services/calendar.service');
 const Conversation = require('../models/Conversation.model');
 const { buildChatPrompt } = require('../prompts/chat.prompt');
+const DailyDebrief = require('../models/DailyDebrief.model');
+const { buildDebriefPrompt } = require('../prompts/debrief.prompt');
 
 // POST /api/agent/prioritize
 // Body: { tasks[], user_profile }
@@ -327,6 +329,71 @@ router.post('/fast-help', async (req, res) => {
     return res.json({ help_content: helpText, type });
   } catch (err) {
     console.error('Fast help error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/agent/debrief
+// Body: { date, user_id }
+router.post('/debrief', async (req, res) => {
+  try {
+    const { date, user_id } = req.body;
+    if (!date || !user_id) {
+      return res.status(400).json({ error: 'date and user_id are required' });
+    }
+
+    const dayStart = new Date(date + 'T00:00:00.000Z');
+    const dayEnd = new Date(date + 'T23:59:59.999Z');
+
+    const completedTasks = await Task.find({
+      user_id,
+      status: 'completed',
+      completed_at: { $gte: dayStart, $lte: dayEnd }
+    });
+
+    const missedTasks = await Task.find({
+      user_id,
+      status: { $in: ['skipped', 'pending'] },
+      deadline: { $gte: dayStart, $lte: dayEnd }
+    });
+
+    const xpEarned = completedTasks.reduce((sum, t) => sum + (t.xp_value || 0), 0);
+
+    const user = await User.findById(user_id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const userProfile = {
+      name: user.name,
+      persona: user.persona || 'student',
+      profile: user.profile || {}
+    };
+
+    const prompt = buildDebriefPrompt(completedTasks, missedTasks, userProfile, xpEarned);
+    const result = await callGemini(prompt, true);
+
+    const { productivity_score, gemini_tip, motivational_line } = result;
+
+    await DailyDebrief.findOneAndUpdate(
+      { user_id, date: dayStart },
+      {
+        completed_tasks: completedTasks.map(t => t._id),
+        missed_tasks: missedTasks.map(t => t._id),
+        xp_earned: xpEarned,
+        gemini_tip: gemini_tip || '',
+        productivity_score: productivity_score || 0
+      },
+      { upsert: true, new: true }
+    );
+
+    res.json({
+      completed: completedTasks,
+      missed: missedTasks,
+      tip: gemini_tip,
+      motivational_line,
+      xp_summary: { xp_earned: xpEarned, productivity_score: productivity_score || 0 }
+    });
+  } catch (err) {
+    console.error('Debrief error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
